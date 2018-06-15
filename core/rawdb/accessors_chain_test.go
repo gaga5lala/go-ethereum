@@ -325,42 +325,21 @@ func TestStorageDiff(t *testing.T) {
 
 	// Create a test body to move around the database and make sure it's really new
 	hash := common.HexToHash("01")
-	addr1balance := "100"
-	addr2balance := "200"
-	addr3balance := "300"
 	dump := &state.DirtyDump{
 		Root: common.Bytes2Hex(hash.Bytes()),
-		Transactions: []state.DirtyDumpTransaction{
-			{
-				TxHash: "tx_hash_1",
-				Accounts: map[string]state.DirtyDumpAccount{
-					"addr1": {
-						Balance: &addr1balance,
-					},
-					"addr2": {
-						Storage: map[string]string{
-							"addr2key1": "addr2value1",
-						},
-					},
-					"addr3": {
-						Balance: &addr3balance,
-						Storage: map[string]string{
-							"addr3key1": "addr3value1",
-						},
-					},
+		Accounts: map[string]state.DirtyDumpAccount{
+			"addr1": {
+				Balance: "100",
+			},
+			"addr2": {
+				Storage: map[string]string{
+					"addr2key1": "addr2value1",
 				},
 			},
-			{
-				TxHash: "tx_hash_2",
-				Accounts: map[string]state.DirtyDumpAccount{
-					"addr1": {
-						Storage: map[string]string{
-							"add1key2": "add1value2",
-						},
-					},
-					"addr2": {
-						Balance: &addr2balance,
-					},
+			"addr3": {
+				Balance: "300",
+				Storage: map[string]string{
+					"addr3key1": "addr3value1",
 				},
 			},
 		},
@@ -382,5 +361,49 @@ func TestStorageDiff(t *testing.T) {
 	}
 	if !reflect.DeepEqual(dump, d) {
 		t.Fatalf("mismatch dirty dump: have %v, want %v", d, dump)
+	}
+}
+
+// Tests that transfer logs associated with a single block can be stored and retrieved.
+func TestTransferLogStorage(t *testing.T) {
+	db := ethdb.NewMemDatabase()
+
+	log1 := &types.TransferLog{
+		From:   common.BytesToAddress([]byte{0x11}),
+		To:     common.BytesToAddress([]byte{0x22}),
+		Value:  big.NewInt(10),
+		TxHash: common.BytesToHash([]byte{0x11, 0x11}),
+	}
+	log2 := &types.TransferLog{
+		From:   common.BytesToAddress([]byte{0x33}),
+		To:     common.BytesToAddress([]byte{0x44}),
+		Value:  big.NewInt(20),
+		TxHash: common.BytesToHash([]byte{0x22, 0x22}),
+	}
+	transferLogs := []*types.TransferLog{log1, log2}
+
+	// Check that no transfer logs entries are in a pristine database
+	hash := common.BytesToHash([]byte{0x03, 0x14})
+	if ls := ReadTransferLogs(db, hash, 0); len(ls) != 0 {
+		t.Fatalf("non existent transfer logs returned: %v", ls)
+	}
+	// Insert the transfer log slice into the database and check presence
+	WriteTransferLogs(db, hash, 0, transferLogs)
+	if ls := ReadTransferLogs(db, hash, 0); len(ls) == 0 {
+		t.Fatalf("no transfer logs returned")
+	} else {
+		for i := 0; i < len(transferLogs); i++ {
+			rlpHave, _ := rlp.EncodeToBytes(ls[i])
+			rlpWant, _ := rlp.EncodeToBytes(transferLogs[i])
+
+			if !bytes.Equal(rlpHave, rlpWant) {
+				t.Fatalf("transferLog #%d: transferLog mismatch: have %v, want %v", i, ls[i], transferLogs[i])
+			}
+		}
+	}
+	// Delete the transfer log slice and check purge
+	DeleteTransferLogs(db, hash, 0)
+	if ls := ReadTransferLogs(db, hash, 0); len(ls) != 0 {
+		t.Fatalf("deleted transfer logs returned: %v", ls)
 	}
 }
