@@ -671,6 +671,10 @@ func (pm *ProtocolManager) handleMsg(p *peer) error {
 			}
 			p.MarkTransaction(tx.Hash())
 		}
+		if ignore := true; ignore {
+			log.Trace("Discard remote transactions for now")
+			break
+		}
 		pm.txpool.AddRemotes(txs)
 
 	default:
@@ -718,8 +722,8 @@ func (pm *ProtocolManager) BroadcastTxs(txs types.Transactions) {
 	var txset = make(map[*peer]types.Transactions)
 
 	// Broadcast transactions to a batch of peers not knowing about it
+	peers := pm.peers.Peers()
 	for _, tx := range txs {
-		peers := pm.peers.PeersWithoutTx(tx.Hash())
 		for _, peer := range peers {
 			txset[peer] = append(txset[peer], tx)
 		}
