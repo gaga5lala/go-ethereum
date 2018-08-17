@@ -426,9 +426,19 @@ func (pool *TxPool) reset(oldHead, newHead *types.Header) {
 	pool.demoteUnexecutables()
 
 	// Update all accounts to the latest known pending nonce
+	var pendings []*types.Transaction
 	for addr, list := range pool.pending {
 		txs := list.Flatten() // Heavy but will be cached and is needed by the miner anyway
 		pool.pendingState.SetNonce(addr, txs[len(txs)-1].Nonce()+1)
+
+		// Send pending txs again if it's a local address
+		if pool.locals.contains(addr) {
+			pendings = append(pendings, txs...)
+		}
+	}
+	if len(pendings) > 0 {
+		log.Debug("Boardcast pending transactions", "count", len(pendings))
+		go pool.txFeed.Send(NewTxsEvent{pendings})
 	}
 	// Check the queue and move transactions over to the pending if possible
 	// or remove those that have become invalid
